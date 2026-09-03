@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from luma_desk.ui.header import Header
+from luma_desk.ui.dashboard import Dashboard, DraggableCard
 from luma_desk.ui.todo.to_do import ToDo
 from luma_desk.ui.todo.task_row import TaskRow
 
@@ -27,22 +28,15 @@ class BackgroundWidget(QWidget):
         # Header
         self.header = Header()
 
+        # Dashboard
+        self.dashboard = Dashboard()
+
         # To Do
         self.to_do = ToDo()
 
-        # Dashboard
-        dashboard_layout = QHBoxLayout()
+        to_do_card = DraggableCard("To Do", self.to_do)
 
-        dashboard_layout.setContentsMargins(100, 100, 100, 100)
-
-        dashboard_layout.setSpacing(30)
-
-        dashboard_layout.addWidget(self.to_do)
-
-        dashboard_layout.addStretch()
-
-        dashboard_widget = QWidget()
-        dashboard_widget.setLayout(dashboard_layout)
+        self.dashboard.add_card(to_do_card, 40, 40)
 
         # Main layout
         layout = QVBoxLayout()
@@ -51,7 +45,7 @@ class BackgroundWidget(QWidget):
         layout.setSpacing(0)
 
         layout.addWidget(self.header)
-        layout.addWidget(dashboard_widget)
+        layout.addWidget(self.dashboard)
 
         self.setLayout(layout)
 
