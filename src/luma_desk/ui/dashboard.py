@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from PySide6.QtCore import Qt, QPoint, Signal
 from PySide6.QtWidgets import (
     QFrame,
@@ -8,6 +11,51 @@ from PySide6.QtWidgets import (
     QWidget
 )
 
+class DashboardState:
+    def __init__(self):
+        project_root = Path(__file__).resolve().parents[3]
+
+        self.data_folder = project_root / "data"
+        self.data_file = self.data_folder / "dashboard.json"
+
+        self.data_folder.mkdir(exist_ok=True)
+
+        self.states = self.load()
+
+    def load(self):
+        if not self.data_file.exists():
+            return {}
+
+        try:
+            with open(self.data_file, "r", encoding="utf-8") as file:
+                return json.load(file)
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def save(self):
+        with open(self.data_file, "w", encoding="utf-8") as file:
+            json.dump(self.states, file, indent=4)
+
+    def get(self, widget_id):
+        return self.states.get(widget_id)
+
+    def set(self, widget_id, x, y):
+        self.states[widget_id] = {
+            "pinned": True,
+            "x": x,
+            "y": y,
+        }
+
+        self.save()
+
+    def unpin(self, widget_id):
+        self.states[widget_id] = {
+            "pinned": False
+        }
+
+        self.save()
+
+    
 class DragHandle(QLabel):
     pressed = Signal(QPoint)
     moved = Signal(QPoint)
@@ -49,8 +97,13 @@ class DragHandle(QLabel):
 
 
 class DraggableCard(QFrame):
-    def __init__(self, title, content):
+    def __init__(self, widget_id, title, content, default_x, default_y, state):
         super().__init__()
+
+        self.widget_id = widget_id
+        self.default_x = default_x
+        self.default_y = default_y
+        self.state = state
 
         self.locked = False
         self.drag_offset = QPoint()
@@ -124,6 +177,17 @@ class DraggableCard(QFrame):
 
         self.adjustSize()
 
+        # Restore saved state
+        saved_state = self.state.get(self.widget_id)
+
+        if saved_state and saved_state.get("pinned"):
+            self.locked = True
+            self.move(saved_state["x"], saved_state["y"])
+            self.pin_button.setText("📍")
+            self.pin_button.setToolTip("Unpin widget")
+        else:
+            self.move(self.default_x, self.default_y)
+
         # Drag signals
         self.drag_handle.pressed.connect(self.start_drag)
         self.drag_handle.moved.connect(self.drag)
@@ -159,18 +223,28 @@ class DraggableCard(QFrame):
         pass
 
     def toggle_pin(self):
-        self.locked = not self.locked
-
         if self.locked:
+            self.locked = False # Unpin
+            self.move(self.default_x, self.default_y)
+
+            self.pin_button.setText("📌")
+            self.pin_button.setToolTip("Pin widget")   
+
+            self.state.unpin(self.widget_id)
+
+        else:
+            self.locked = True # Pin
+            self.state.set(self.widget_id, self.x(), self.y())
+
             self.pin_button.setText("📍")
             self.pinbutton.setToolTip("Unpin widget")
-        else:
-            self.pin_button.setText("📌")
-            self.pin_button.setToolTip("Pin widget")        
+   
 
 class Dashboard(QWidget):
     def __init__(self):
         super().__init__()
+
+        self.state = DashboardState()
 
         self.setStyleSheet("""
         QWidget {
@@ -178,7 +252,10 @@ class Dashboard(QWidget):
         }
     """)
 
-    def add_card(self, card, x, y):
+    def add_card(self, widget_id, title, content, x, y):
+        card = DraggableCard(widget_id, title, content, x, y, self.state)
+
         card.setParent(self)
-        card.move(x, y)
         card.show()
+
+        return card

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from luma_desk.ui.header import Header
-from luma_desk.ui.dashboard import Dashboard, DraggableCard
+from luma_desk.ui.dashboard import Dashboard
 from luma_desk.ui.todo.to_do import ToDo
 from luma_desk.ui.todo.task_row import TaskRow
 
@@ -34,9 +34,7 @@ class BackgroundWidget(QWidget):
         # To Do
         self.to_do = ToDo()
 
-        to_do_card = DraggableCard("To Do", self.to_do)
-
-        self.dashboard.add_card(to_do_card, 40, 40)
+        self.dashboard.add_card("todo", "To Do", self.to_do, 40, 40)
 
         # Main layout
         layout = QVBoxLayout()
