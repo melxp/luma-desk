@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from luma_desk.ui.header import Header
 from luma_desk.ui.dashboard import Dashboard
 from luma_desk.ui.todo.to_do import ToDo
-from luma_desk.ui.todo.task_row import TaskRow
+from luma_desk.ui.spotify.spotify_widget import SpotifyWidget
 
 
 class BackgroundWidget(QWidget):
@@ -33,8 +33,11 @@ class BackgroundWidget(QWidget):
 
         # To Do
         self.to_do = ToDo()
-
         self.dashboard.add_card("todo", "To Do", self.to_do, 40, 40)
+
+        # Spotify
+        self.spotify = SpotifyWidget()
+        self.dashboard.add_card("spotify", "Spotify", self.spotify, 400, 40)
 
         # Main layout
         layout = QVBoxLayout()

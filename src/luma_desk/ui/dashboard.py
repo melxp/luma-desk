@@ -237,7 +237,7 @@ class DraggableCard(QFrame):
             self.state.set(self.widget_id, self.x(), self.y())
 
             self.pin_button.setText("📍")
-            self.pinbutton.setToolTip("Unpin widget")
+            self.pin_button.setToolTip("Unpin widget")
    
 
 class Dashboard(QWidget):
