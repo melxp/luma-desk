@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Luma Desk Spotify Player</title>
+
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body>
+
+<script>
+
+    console.log("Luma Desk Spotify player page started.")
+
+    let player = null;
+
+    window.spotifySDKReady = false;
+    window.spotifyPlayerReady = false;
+    window.deviceId = null;
+    window.accessToken = null;
+
+    window.onSpotifyWebPlaybackSDKReady = function () {
+
+        console.log("Spotify Web Playback SDK loaded");
+
+        window.spotifySDKReady = true;
+    };
+
+    window.createPlayer = function (accessToken) {
+
+        console.log("createPlayer() called");
+
+        window.accessToken = accessToken;
+
+        console.log("SDK ready: ", window.spotifySDKReady);
+
+        if (!window.spotifySDKReady) {
+            console.log("Waiting for Spotify SDK...");
+            return false;
+        }
+
+        if (typeof Spotify == "undefined") {
+            console.error("Spotify global is unavailable.");
+            return false;
+        }
+
+        if (window.player) {
+            console.log("Spotify player already exists.");
+            return true;
+        }
+        
+        console.log("Creating Spotify.Player...");
+
+        window.player = new Spotify.Player({
+
+            name: "Luma Desk",
+
+            getOAuthToken: function (callback) {
+                callback(window.accessToken);
+            },
+
+            volume: 0.5,
+        });
+
+        window.player.addListener(
+            "ready",
+            function ({ device_id }) {
+
+                console.log("Spotify device ready:", device_id);
+
+                window.deviceId = device_id;
+                window.spotifyPlayerReady = true;
+            }
+        );
+
+        window.player.addListener(
+            "not_ready",
+            function ({ device_id }) {
+
+                console.log("Spotify device offline:", device_id);
+
+                window.deviceId = null;
+                window.spotifyPlayerReady = false;
+            }
+        );
+
+        window.player.addListener(
+            "player_state_changed",
+            function (state) {
+
+                if (!state) {
+                    return;
+                }
+
+                const track = state.track_window.current_track;
+
+                if (!track) {
+                    return;
+                }
+
+                console.log("Currently playing:", track.name);
+            }
+        );
+
+        window.player.addListener(
+            "initialization_error",
+            function ({ message }) {
+
+                console.error("Spotify initialization error:", message);
+            }
+        );
+
+        window.player.addListener(
+            "authentication_error",
+            function ({ message }) {
+
+                console.error("Spotify authentication error:", message);
+            }
+        );
+
+        window.player.addListener(
+            "account_error",
+            function ({ message }) {
+
+                console.error("Spotify account error:", message);
+            }
+        );
+
+        window.player.addListener(
+            "playback_error",
+            function ({ message }) {
+
+                console.error("Spotify playback error:", message);
+            }
+        );
+
+        console.log("Connecting Spotify player...");
+
+        window.player.connect().then(function (success) {
+            console.log("Spotify player connect result: ", success);
+        }).catch(function (error) {
+            console.log("Spotify player connection failed: ", error);
+        });
+        return true;
+    };
+
+    window.playTrack = async function (uri) {
+        console.log("playTrack() called: ", uri);
+
+        if (!window.deviceId) {
+            console.error("Spotify player is not ready.");
+            return false;
+        }
+
+        if (!window.accessToken) {
+            console.error("Spotify access token is missing.")
+            return false;
+        }
+
+        try {
+
+            const response = await fetch(
+                "https://api.spotify.com/v1/me/player/play"
+                + "?device_id="
+                + encodeURIComponent(window.deviceId),
+                {
+                    method: "PUT", 
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + window.accessToken
+                    },
+                    body: JSON.stringify({uris: [uri]})
+                } 
+
+            );
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("Spotify playback error: ", errorText);
+                return false;
+            }
+
+            console.log("Playling: ", uri);
+            return true;
+
+        } catch (error) {
+
+            console.error("Playback request failed: ", error);
+            return false;
+        }
+    };
+
+    window.pausePlayback = async function () {
+
+        if (!window.player) {
+            return false;
+        }
+
+        return await window.player.pause();
+    };
+
+    window.resumePlayback = async function () {
+
+        if (!window.player) { 
+            return false;
+        }
+
+        return await window.player.resume();
+    }
+
+    window.nextTrack = async function () {
+
+        if (!window.player) {
+            return false;
+        }
+
+        return await window.player.nextTrack();
+    }
+
+    window.previousTrack = async function () {
+
+        if (!window.player) {
+            return false;
+        }
+
+        return await window.player.previousTrack();
+    }
+
+</script>
+
+<script 
+    src = "https://sdk.scdn.co/spotify-player.js">
+</script>
+
+</body>
+</html>

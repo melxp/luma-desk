@@ -1,5 +1,4 @@
-# $env:PYTHONPATH = "$PWD\src"
-# python -m luma_desk.main
+# $env:PYTHONPATH = "$PWD\src"       python -m luma_desk.main
 
 from PySide6.QtWidgets import QApplication
 

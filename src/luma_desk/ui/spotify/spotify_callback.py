@@ -64,6 +64,7 @@ class SpotifyCallbackServer(QThread):
                 <!DOCTYPE html>
                 <html>
                 <head>
+                    <meta charset="UTF-8">
                     <title>Luma Desk</title>
                 </head>
                 <body>
@@ -75,19 +76,20 @@ class SpotifyCallbackServer(QThread):
                 body = html.encode("utf-8")
 
                 self.send_response(200)
+
                 self.send_header(
                     "Content-Type",
                     "text/html; charset=utf-8"
                 )
+
                 self.send_header(
                     "Content-Length",
                     str(len(body))
                 )
+
                 self.end_headers()
 
                 self.wfile.write(body)
-
-                callback_server.server.shutdown()
 
             def log_message(self, format, *args):
                 pass
@@ -97,4 +99,24 @@ class SpotifyCallbackServer(QThread):
             CallbackHandler,
         )
 
-        self.server.serve_forever()
+        print(
+            f"Spotify callback server listening "
+            f"on 127.0.0.1:{self.port}"
+        )
+
+        self.server.serve_forever(poll_interval=0.1)
+
+        print("Spotify callback server stopped.")
+
+    def stop(self):
+        if self.server:
+            server = self.server
+            self.server = None
+
+            server.shutdown()
+            server.server_close()
+
+        self.quit()
+
+        if not self.wait(2000):
+            print("Spotify callback server did not stop cleanly.")

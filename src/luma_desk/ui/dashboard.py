@@ -138,7 +138,7 @@ class DraggableCard(QFrame):
             QPushButton {
                 background: transparent;
                 border: none;
-                color: rgba(2555, 255, 255, 150);
+                color: rgba(255, 255, 255, 150);
                 font-size: 12px;
             }
 
