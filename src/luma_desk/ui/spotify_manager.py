@@ -104,9 +104,6 @@ class SpotifyManager:
 
         return token_data
 
-    # ---------------------------------------------------------
-    # Helpers
-    # ---------------------------------------------------------
 
     def _headers(self):
         if not self.access_token:
@@ -120,10 +117,7 @@ class SpotifyManager:
             )
         }
 
-    # ---------------------------------------------------------
-    # Playlists
-    # ---------------------------------------------------------
-
+  
     def get_playlists(self):
 
         response = requests.get(
@@ -161,9 +155,6 @@ class SpotifyManager:
 
         return response.json()
 
-    # ---------------------------------------------------------
-    # Spotify Connect devices
-    # ---------------------------------------------------------
 
     def get_devices(self):
 
@@ -195,10 +186,7 @@ class SpotifyManager:
 
         return None
 
-    # ---------------------------------------------------------
-    # Playback
-    # ---------------------------------------------------------
-
+  
     def play_track(
         self,
         track_uri,
@@ -224,6 +212,33 @@ class SpotifyManager:
         )
 
         response.raise_for_status()
+
+    def play_playlist_from_position(self, playlist_id, position, device_id=None):
+        params = {}
+
+        if device_id:
+            params["device_id"] = device_id
+
+        response = requests.put(
+            f"{self.API_BASE}/me/player/play",
+            headers={
+                **self._headers(),
+                "Content-Type": "application/json",
+            },
+            params=params,
+            json={
+                "context_uri": (
+                    f"spotify:playlist:{playlist_id}"
+                ),
+                "offset": {
+                    "position": position
+                },
+            },
+            timeout=15,
+        )
+
+        response.raise_for_status()
+
 
     def pause(self, device_id=None):
 
@@ -312,9 +327,6 @@ class SpotifyManager:
 
         response.raise_for_status()
 
-    # ---------------------------------------------------------
-    # Current playback
-    # ---------------------------------------------------------
 
     def get_current_playback(self):
 

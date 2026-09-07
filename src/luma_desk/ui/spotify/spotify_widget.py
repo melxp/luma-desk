@@ -22,6 +22,7 @@ class SpotifyWidget(QFrame):
         # Spotify manager
         self.spotify = SpotifyManager()
         self.callback_server = None
+        self.current_playlist_id = None
 
         # Widget styling
         self.setMinimumSize(250, 450)
@@ -221,7 +222,7 @@ class SpotifyWidget(QFrame):
     def enable_playback_controls(self, enabled):
 
         print("Playback controls enabled: ", enabled)
-        
+
         self.previous_button.setEnabled(enabled)
         self.play_pause_button.setEnabled(enabled)
         self.next_button.setEnabled(enabled)
@@ -270,6 +271,8 @@ class SpotifyWidget(QFrame):
         if not playlist_id:
             return
 
+        self.current_playlist_id = playlist_id
+
         try:
 
             playlist_data = self.spotify.get_playlist_items(playlist_id)
@@ -280,7 +283,7 @@ class SpotifyWidget(QFrame):
 
             displayed_tracks = 0
 
-            for playlist_item in tracks:
+            for position, playlist_item in enumerate(tracks):
 
                 track = playlist_item.get("item")
 
@@ -311,6 +314,7 @@ class SpotifyWidget(QFrame):
                 list_item = QListWidgetItem(text)
                 list_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 list_item.setData(Qt.UserRole, track.get("uri")) # Save Spotify URI for playback
+                list_item.setData(Qt.UserRole + 1, position)
 
                 self.track_list.addItem(list_item)
 
@@ -347,10 +351,22 @@ class SpotifyWidget(QFrame):
 
         track_uri = item.data(Qt.UserRole)
 
+        track_position = item.data(Qt.UserRole + 1)
+
         if not track_uri:
             return
 
+        if self.current_playlist_id is None:
+            self.status.setText("No playlist selected.")
+            return
+
+        if track_position is None:
+            self.status.setText("Track position unavailable.")
+            return
+
         print("Selected track: ", track_uri)
+        print("Playlist position: ", track_position)
+        print("Playlist ID: ", self.current_playlist_id)
 
         try: 
 
@@ -360,11 +376,14 @@ class SpotifyWidget(QFrame):
                 self.status.setText("Open Spotify on device first.")
                 return
 
-            self.spotify.play_track(track_uri, device.get("id"))
+            device_id = device.get("id")
+            device_name = device.get("name", "Spotify")
+
+            self.spotify.play_playlist_from_position(self.current_playlist_id, track_position, device_id)
 
             self.play_pause_button.setText("⏸")
 
-            self.status.setText(f"Playing on {device.get('name', 'Spotify')}")
+            self.status.setText(f"Playing on {device_name}")
 
         except Exception as error:
 
