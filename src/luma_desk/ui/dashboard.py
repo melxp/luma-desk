@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QWidget
 )
 
+
+
 class DashboardState:
     def __init__(self):
         project_root = Path(__file__).resolve().parents[3]

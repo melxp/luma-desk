@@ -5,7 +5,6 @@ from PySide6.QtGui import QPainter, QPixmap
 from PySide6.QtWidgets import (
     QMainWindow,
     QVBoxLayout,
-    QHBoxLayout,
     QWidget,
 )
 
@@ -13,6 +12,9 @@ from luma_desk.ui.header import Header
 from luma_desk.ui.dashboard import Dashboard
 from luma_desk.ui.todo.to_do import ToDo
 from luma_desk.ui.spotify.spotify_widget import SpotifyWidget
+from luma_desk.ui.pomodoro.pomodoro_widget import PomodoroWidget
+from luma_desk.ui.study_timer.study_timer import StudyTimer
+from luma_desk.ui.study_timer.study_constellation import StudyConstellation
 
 
 class BackgroundWidget(QWidget):
@@ -39,6 +41,28 @@ class BackgroundWidget(QWidget):
         self.spotify = SpotifyWidget()
         self.dashboard.add_card("spotify", "Spotify", self.spotify, 400, 40)
 
+        # Pomodoro
+        self.pomodoro = PomodoroWidget()
+
+        self.dashboard.add_card("pomodoro", "Pomodoro", self.pomodoro, 700, 40)
+
+        # Study Constellation
+        self.study_constellation = StudyConstellation()
+        self.dashboard.add_card("study_constellation", "Study", self.study_constellation, 620, 300)
+
+        # Floating study timer
+        self.study_timer = StudyTimer()
+
+        self.study_timer.setParent(self)
+
+        self.study_timer.adjustSize()
+
+        self.study_timer.show()
+
+        self.study_timer.raise_()
+
+        self.study_timer.study_updated.connect(self.study_constellation.refresh)
+
         # Main layout
         layout = QVBoxLayout()
 
@@ -49,6 +73,32 @@ class BackgroundWidget(QWidget):
         layout.addWidget(self.dashboard)
 
         self.setLayout(layout)
+
+        self.position_study_timer()
+        self.study_timer.raise_()
+
+    def position_study_timer(self):
+        margin = 20
+
+        x = (
+            self.width()
+            - self.study_timer.width()
+            - margin
+        )
+
+        y = (
+            self.height()
+            - self.study_timer.height()
+            - margin
+        )
+
+        self.study_timer.move(x, y)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+        self.position_study_timer()
+        self.study_timer.raise_()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -76,6 +126,11 @@ class MainWindow(QMainWindow):
 
         self.setMinimumSize(QSize(1000, 650))
 
-        background_widget = BackgroundWidget()
-        
-        self.setCentralWidget(background_widget)
+        self.background_widget = BackgroundWidget()
+
+        self.setCentralWidget(self.background_widget)
+
+    def closeEvent(self, event):
+        self.background_widget.study_timer.stop_and_save()
+
+        event.accept()
