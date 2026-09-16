@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 class TaskRow(QFrame):
 
     task_completed = Signal(bool)
+    deleted = Signal()
 
     def __init__(self, task_text, completed):
         super().__init__()
@@ -68,6 +69,27 @@ class TaskRow(QFrame):
             }
         """)
 
+        # Remove the task
+        self.delete_button = QPushButton("×")
+        self.delete_button.setFixedSize(18, 18)
+        self.delete_button.setCursor(Qt.PointingHandCursor)
+        self.delete_button.setToolTip("Remove this task")
+        self.delete_button.clicked.connect(self.deleted.emit)
+
+        self.delete_button.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: rgba(255, 255, 255, 100);
+                font-size: 13px;
+                padding: 0px;
+            }
+
+            QPushButton:hover {
+                color: rgba(255, 180, 180, 230);
+            }
+        """)
+
         self.update_appearance()
 
         # Task content
@@ -77,6 +99,7 @@ class TaskRow(QFrame):
 
         self.content_layout.addWidget(self.bullet)
         self.content_layout.addWidget(self.text)
+        self.content_layout.addWidget(self.delete_button)
 
         # Line separator
         self.separator =  QFrame()

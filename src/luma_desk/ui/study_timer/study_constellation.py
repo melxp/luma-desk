@@ -1,6 +1,6 @@
 import json
 import calendar
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF
@@ -9,6 +9,14 @@ from PySide6.QtWidgets import QFrame
 
 
 class StudyConstellation(QFrame):
+
+    # Grid geometry. Weeks run left to right along a row, and each
+    # row underneath is the next week - a normal month calendar,
+    # rather than a GitHub-style column-per-week heatmap.
+    CELL_SIZE = 20
+    GAP = 4
+    COLUMNS = 7  # Sunday through Saturday
+    MAX_ROWS = 6  # A month can span at most 6 calendar weeks
 
     def __init__(self):
         super().__init__()
@@ -26,7 +34,7 @@ class StudyConstellation(QFrame):
         self.current_month = today.month
 
         # Widget
-        self.setMinimumSize(340, 260)
+        self.setMinimumSize(340, 250)
         self.setMouseTracking(True)
         self.hovered_date = None
 
@@ -133,6 +141,32 @@ class StudyConstellation(QFrame):
 
         return count
 
+    def get_month_total(self):
+        total = 0
+
+        for day_number in range(1, self.days_in_month() + 1):
+            day = date(self.current_year, self.current_month, day_number)
+            total += self.get_seconds(day)
+
+        return total
+
+    def get_current_streak(self):
+        """How many days in a row have been studied, up to today."""
+
+        day = date.today()
+
+        # Today isn't over yet, so an empty today doesn't break a streak.
+        if self.get_seconds(day) <= 0:
+            day = day - timedelta(days=1)
+
+        streak = 0
+
+        while self.get_seconds(day) > 0:
+            streak += 1
+            day = day - timedelta(days=1)
+
+        return streak
+
     def format_time(self, seconds):
         hours = seconds // 3600
         minutes = (seconds % 3600) // 60
@@ -141,6 +175,22 @@ class StudyConstellation(QFrame):
             return f"{hours}h {minutes}m" if minutes > 0 else f"{hours}h"
 
         return f"{minutes}m" if minutes > 0 else "0m"
+
+    def summary_text(self):
+        study_days = self.get_study_days()
+        day_text = "day" if study_days == 1 else "days"
+
+        parts = [
+            f"{study_days} study {day_text}",
+            self.format_time(self.get_month_total()),
+        ]
+
+        streak = self.get_current_streak()
+
+        if streak > 0:
+            parts.append(f"✦ {streak} day streak")
+
+        return "  ·  ".join(parts)
 
     # Cell colour
     def get_cell_color(self, seconds):
@@ -158,6 +208,26 @@ class StudyConstellation(QFrame):
 
         return QColor(232, 213, 177, 240)
 
+    # Grid geometry shared by painting and mouse handling
+    def grid_origin(self):
+        grid_width = self.COLUMNS * self.CELL_SIZE + (self.COLUMNS - 1) * self.GAP
+
+        grid_x = (self.width() - grid_width) / 2
+        grid_y = 76  # Leaves room for the title, summary, and weekday header
+
+        return grid_x, grid_y
+
+    def cell_rect(self, day_number, grid_x, grid_y):
+        index = self.first_weekday() + day_number - 1
+
+        week_row = index // 7
+        weekday_column = index % 7
+
+        x = grid_x + weekday_column * (self.CELL_SIZE + self.GAP)
+        y = grid_y + week_row * (self.CELL_SIZE + self.GAP)
+
+        return QRectF(x, y, self.CELL_SIZE, self.CELL_SIZE)
+
     # Painting
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -170,13 +240,11 @@ class StudyConstellation(QFrame):
         painter.setPen(Qt.GlobalColor.white)
         painter.drawText(QRectF(45, 12, self.width() - 90, 25), Qt.AlignmentFlag.AlignCenter, f"{self.month_name()} {self.current_year}")
 
-        # Study day count
+        # Study summary
         summary_font = QFont("Lora", 9)
         painter.setFont(summary_font)
         painter.setPen(QColor(255, 255, 255, 170))
-        study_days = self.get_study_days()
-        day_text = "day" if study_days == 1 else "days"
-        painter.drawText(QRectF(20, 36, self.width() - 40, 18), Qt.AlignmentFlag.AlignCenter, f"{study_days} study {day_text}")
+        painter.drawText(QRectF(20, 36, self.width() - 40, 18), Qt.AlignmentFlag.AlignCenter, self.summary_text())
 
         # Navigation arrows
         arrow_font = QFont("Lora", 17)
@@ -191,49 +259,51 @@ class StudyConstellation(QFrame):
         painter.setPen(QColor(255, 255, 255, next_alpha))
         painter.drawText(QRectF(self.width() - 40, 12, 30, 25), Qt.AlignmentFlag.AlignCenter, "›")
 
-        # Grid
-        cell_size = 20
-        gap = 4
-        columns = 6
-        grid_width = columns * cell_size + (columns - 1) * gap
-        grid_x = (self.width() - grid_width) / 2
-        grid_y = 55
+        # Grid geometry
+        grid_x, grid_y = self.grid_origin()
 
-        # Weekday labels
+        # Weekday header, running along the top
         weekday_font = QFont("Lora", 8)
         painter.setFont(weekday_font)
         weekday_names = ["S", "M", "T", "W", "T", "F", "S"]
         painter.setPen(QColor(255, 255, 255, 145))
 
-        for row in range(7):
-            y = grid_y + row * (cell_size + gap)
-            painter.drawText(QRectF(grid_x - 22, y, 18, cell_size), Qt.AlignmentFlag.AlignCenter, weekday_names[row])
+        for column in range(self.COLUMNS):
+            x = grid_x + column * (self.CELL_SIZE + self.GAP)
 
-        # Calendar cells
-        first_day = self.first_weekday()
+            painter.drawText(
+                QRectF(x, grid_y - 20, self.CELL_SIZE, 16),
+                Qt.AlignmentFlag.AlignCenter,
+                weekday_names[column],
+            )
+
+        # Calendar cells, one row per week
         days = self.days_in_month()
+        today = date.today()
 
         for day_number in range(1, days + 1):
-            index = first_day + day_number - 1
-            column = index // 7
-            row = index % 7
-            x = grid_x + column * (cell_size + gap)
-            y = grid_y + row * (cell_size + gap)
             current_day = date(self.current_year, self.current_month, day_number)
             seconds = self.get_seconds(current_day)
-            cell_rect = QRectF(x, y, cell_size, cell_size)
+            cell_rect = self.cell_rect(day_number, grid_x, grid_y)
 
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(self.get_cell_color(seconds)))
             painter.drawRoundedRect(cell_rect, 5, 5)
+
+            # Mark today so it's easy to find
+            if current_day == today:
+                painter.setPen(QPen(QColor(255, 255, 255, 130), 1))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRoundedRect(cell_rect.adjusted(-2, -2, 2, 2), 6, 6)
 
             if self.hovered_date == current_day:
                 painter.setPen(QPen(QColor(255, 255, 255, 220), 1))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawRoundedRect(cell_rect, 5, 5)
 
-        # Legend
-        grid_height = 7 * cell_size + 6 * gap
+        # Legend, reserving space for the full six rows so it lands
+        # in the same place regardless of how many weeks this month uses.
+        grid_height = self.MAX_ROWS * self.CELL_SIZE + (self.MAX_ROWS - 1) * self.GAP
         legend_y = grid_y + grid_height + 6
 
         legend_font = QFont("Lora", 8)
@@ -265,24 +335,13 @@ class StudyConstellation(QFrame):
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
-        cell_size = 20
-        gap = 4
-        columns = 6
-        grid_width = columns * cell_size + (columns - 1) * gap
-        grid_x = (self.width() - grid_width) / 2
-        grid_y = 55
-        first_day = self.first_weekday()
+        grid_x, grid_y = self.grid_origin()
         days = self.days_in_month()
 
         self.hovered_date = None
 
         for day_number in range(1, days + 1):
-            index = first_day + day_number - 1
-            column = index // 7
-            row = index % 7
-            x = grid_x + column * (cell_size + gap)
-            y = grid_y + row * (cell_size + gap)
-            rect = QRectF(x, y, cell_size, cell_size)
+            rect = self.cell_rect(day_number, grid_x, grid_y)
 
             if rect.contains(mouse_x, mouse_y):
                 current_day = date(self.current_year, self.current_month, day_number)

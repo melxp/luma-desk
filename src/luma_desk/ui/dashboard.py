@@ -124,7 +124,7 @@ class DraggableCard(QFrame):
         self.title.setStyleSheet("""
             QLabel {
                 color: white;
-                font-family: "Lora",
+                font-family: "Lora";
                 font-size: 13px;
                 font-weight: bold;
                 background: transparent;
@@ -135,6 +135,7 @@ class DraggableCard(QFrame):
 
         self.pin_button.setFixedSize(28, 28)
         self.pin_button.setCursor(Qt.PointingHandCursor)
+        self.pin_button.setToolTip("Pin widget")
 
         self.pin_button.setStyleSheet("""
             QPushButton {
@@ -199,6 +200,9 @@ class DraggableCard(QFrame):
         if self.locked:
             return
 
+        # The card being moved should sit above the others.
+        self.raise_()
+
         self.drag_offset = (global_position - self.mapToGlobal(QPoint(0, 0)))
 
     def drag(self, global_position):
@@ -227,7 +231,6 @@ class DraggableCard(QFrame):
     def toggle_pin(self):
         if self.locked:
             self.locked = False # Unpin
-            self.move(self.default_x, self.default_y)
 
             self.pin_button.setText("📌")
             self.pin_button.setToolTip("Pin widget")   
@@ -243,10 +246,17 @@ class DraggableCard(QFrame):
    
 
 class Dashboard(QWidget):
+
+    MARGIN = 20
+    SPACING = 20
+
     def __init__(self):
         super().__init__()
 
         self.state = DashboardState()
+
+        self.cards = []
+        self.arranged = False
 
         self.setStyleSheet("""
         QWidget {
@@ -260,4 +270,48 @@ class Dashboard(QWidget):
         card.setParent(self)
         card.show()
 
+        self.cards.append(card)
+
         return card
+
+    # Tidying
+    def tidy(self):
+        """Flow every unpinned card into neat rows. Pinned cards stay put."""
+
+        x = self.MARGIN
+        y = self.MARGIN
+        row_height = 0
+
+        for card in self.cards:
+
+            if card.locked:
+                continue
+
+            card.adjustSize()
+
+            # Start a new row when this one runs out of space.
+            if x > self.MARGIN and x + card.width() > self.width() - self.MARGIN:
+                x = self.MARGIN
+                y += row_height + self.SPACING
+                row_height = 0
+
+            card.move(x, y)
+
+            x += card.width() + self.SPACING
+            row_height = max(row_height, card.height())
+
+    def showEvent(self, event):
+        super().showEvent(event)
+
+        # Lay the cards out once, the first time there's a real
+        # window size to work with.
+        if not self.arranged:
+            self.arranged = True
+            self.tidy()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+        if not self.arranged:
+            self.arranged = True
+            self.tidy()

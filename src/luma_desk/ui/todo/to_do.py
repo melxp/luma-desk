@@ -4,8 +4,12 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
+    QPushButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from luma_desk.ui.todo.task_row import TaskRow
@@ -36,11 +40,18 @@ class ToDoState:
             json.dump(self.states, file, indent=4)
 
     def get_tasks(self):
-        return self.states.get(
-            "tasks", 
-            [{"text": "", "completed": False} for _ in range(10)]
-        )
-            
+        tasks = self.states.get("tasks", [])
+
+        # Older saves always held ten rows, most of them blank.
+        return [
+            {
+                "text": task.get("text", ""),
+                "completed": bool(task.get("completed", False)),
+            }
+            for task in tasks
+            if task.get("text", "").strip()
+        ]
+
     def set_tasks(self, tasks):
         self.states["tasks"] = tasks
 
@@ -51,19 +62,72 @@ class ToDo(QFrame):
     def __init__(self):
         super().__init__()
 
-        self.setFixedSize(200, 400)
+        self.state = ToDoState()
+        self.tasks = self.state.get_tasks()
+        self.rows = []
+
+        self.setFixedWidth(220)
+        self.setMinimumHeight(400)
 
         self.setStyleSheet("""
-            QFrame {
+            QFrame#toDo {
                 background-color: rgba(82, 96, 68, 210);
+                border-radius: 12px;
             }
 
             QLabel {
                 background-color: transparent;
             }
+
+            QScrollArea {
+                background: transparent;
+                border: none;
+            }
+
+            QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+            }
+
+            QScrollBar::handle:vertical {
+                background: rgba(255, 255, 255, 70);
+                border-radius: 3px;
+                min-height: 20px;
+            }
+
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+
+            QPushButton {
+                color: white;
+                background: rgba(255, 255, 255, 45);
+                border: none;
+                border-radius: 8px;
+                font-family: "Nunito Sans";
+                font-size: 11px;
+                padding: 7px;
+            }
+
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 75);
+            }
+
+            QPushButton:pressed {
+                background: rgba(255, 255, 255, 100);
+            }
+
+            QPushButton#clearButton {
+                background: rgba(0, 0, 0, 45);
+                color: rgba(255, 255, 255, 190);
+            }
         """)
 
+        self.setObjectName("toDo")
+
         self.title = QLabel("❀ To Do List")
+        self.title.setAlignment(Qt.AlignCenter)
 
         self.title.setStyleSheet("""
             QLabel {
@@ -74,50 +138,143 @@ class ToDo(QFrame):
             }
         """)
 
-        # Main layout
-        self.list_layout = QVBoxLayout()
-        self.list_layout.setSpacing(0)
-        self.list_layout.setContentsMargins(0, 20, 0, 5)
-        
-        self.list_layout.addWidget(self.title, alignment=Qt.AlignCenter)
+        # Progress
+        self.progress_label = QLabel()
+        self.progress_label.setAlignment(Qt.AlignCenter)
+
+        self.progress_label.setStyleSheet("""
+            QLabel {
+                color: rgba(255, 255, 255, 150);
+                font-family: "Nunito Sans";
+                font-size: 11px;
+            }
+        """)
 
         # Task layout
         self.task_layout = QVBoxLayout()
-        self.task_layout.setSpacing(7)
-        self.task_layout.setContentsMargins(15, 10, 15, 10)
+        self.task_layout.setSpacing(5)
+        self.task_layout.setContentsMargins(0, 0, 6, 0)
+        self.task_layout.addStretch()
 
-        self.state = ToDoState()
-        self.tasks = self.state.get_tasks()
+        self.task_container = QWidget()
+        self.task_container.setStyleSheet("background: transparent;")
+        self.task_container.setLayout(self.task_layout)
 
-        # Create 10 empty task rows
-        for i in range(10):
-            task = TaskRow(
-                self.tasks[i]["text"],
-                self.tasks[i]["completed"]
-            )
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setWidget(self.task_container)
 
-            task.text.textChanged.connect(
-                lambda text, index=i: self.task_changed(index, text)
-            )
+        # Buttons
+        self.add_button = QPushButton("+ Add task")
+        self.add_button.setCursor(Qt.PointingHandCursor)
+        self.add_button.clicked.connect(self.add_task)
 
-            task.task_completed.connect(
-                lambda completed, index=i: self.task_completed(index, completed)
-            )
+        self.clear_button = QPushButton("Clear done")
+        self.clear_button.setObjectName("clearButton")
+        self.clear_button.setCursor(Qt.PointingHandCursor)
+        self.clear_button.clicked.connect(self.clear_completed)
 
-            self.task_layout.addWidget(task)
+        button_row = QHBoxLayout()
+        button_row.setSpacing(6)
+        button_row.setContentsMargins(0, 0, 0, 0)
 
-        self.list_layout.addLayout(self.task_layout)
+        button_row.addWidget(self.add_button)
+        button_row.addWidget(self.clear_button)
+
+        # Main layout
+        self.list_layout = QVBoxLayout()
+        self.list_layout.setSpacing(8)
+        self.list_layout.setContentsMargins(15, 18, 15, 12)
+
+        self.list_layout.addWidget(self.title)
+        self.list_layout.addWidget(self.progress_label)
+        self.list_layout.addWidget(self.scroll_area)
+        self.list_layout.addLayout(button_row)
 
         self.setLayout(self.list_layout)
 
-    def task_changed(self, index, text):
-        self.tasks[index]["text"] = text
+        self.build_rows()
+
+    # Rows
+    def build_rows(self):
+        for row in self.rows:
+            self.task_layout.removeWidget(row)
+            row.deleteLater()
+
+        self.rows = []
+
+        for position, task in enumerate(self.tasks):
+            row = TaskRow(task["text"], task["completed"])
+
+            row.text.textChanged.connect(
+                lambda text, row=row: self.task_changed(row, text)
+            )
+
+            row.task_completed.connect(
+                lambda completed, row=row: self.task_completed(row, completed)
+            )
+
+            row.deleted.connect(
+                lambda row=row: self.delete_task(row)
+            )
+
+            self.task_layout.insertWidget(position, row)
+            self.rows.append(row)
+
+        self.update_progress()
+
+    def update_progress(self):
+        if not self.tasks:
+            self.progress_label.setText("Nothing on the list yet")
+            return
+
+        done = sum(1 for task in self.tasks if task["completed"])
+
+        self.progress_label.setText(f"{done} of {len(self.tasks)} done")
+
+    # Task changes
+    def task_changed(self, row, text):
+        if row not in self.rows:
+            return
+
+        self.tasks[self.rows.index(row)]["text"] = text
         self.state.set_tasks(self.tasks)
 
-    def task_completed(self, index, completed):
-        self.tasks[index]["completed"] = completed
+    def task_completed(self, row, completed):
+        if row not in self.rows:
+            return
+
+        self.tasks[self.rows.index(row)]["completed"] = completed
+        self.state.set_tasks(self.tasks)
+        self.update_progress()
+
+    def add_task(self):
+        self.tasks.append({"text": "", "completed": False})
         self.state.set_tasks(self.tasks)
 
+        self.build_rows()
 
-        
+        if self.rows:
+            self.rows[-1].text.setFocus()
 
+    def delete_task(self, row):
+        if row not in self.rows:
+            return
+
+        index = self.rows.index(row)
+
+        del self.tasks[index]
+        self.rows.remove(row)
+
+        self.task_layout.removeWidget(row)
+        row.deleteLater()
+
+        self.state.set_tasks(self.tasks)
+        self.update_progress()
+
+    def clear_completed(self):
+        self.tasks = [task for task in self.tasks if not task["completed"]]
+
+        self.state.set_tasks(self.tasks)
+        self.build_rows()

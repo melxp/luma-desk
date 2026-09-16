@@ -1,5 +1,10 @@
-from PySide6.QtCore import Qt, QTimer
+import json
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
     QFrame,
     QVBoxLayout,
     QHBoxLayout,
@@ -8,14 +13,65 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 
+
+class PomodoroState:
+    def __init__(self):
+        project_root = Path(__file__).resolve().parents[4]
+
+        self.data_folder = project_root / "data"
+        self.data_file = self.data_folder / "pomodoro.json"
+
+        self.data_folder.mkdir(exist_ok=True)
+
+        self.states = self.load()
+
+    def load(self):
+        if not self.data_file.exists():
+            return {}
+
+        try:
+            with open(self.data_file, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def save(self):
+        try:
+            with open(self.data_file, "w", encoding="utf-8") as file:
+                json.dump(self.states, file, indent=4)
+        except OSError as error:
+            print("Could not save pomodoro settings:", error)
+
+    def get(self, key, fallback):
+        value = self.states.get(key, fallback)
+
+        return value if isinstance(value, type(fallback)) else fallback
+
+    def set_settings(self, work, short, long, auto_continue):
+        self.states["work_minutes"] = work
+        self.states["short_break_minutes"] = short
+        self.states["long_break_minutes"] = long
+        self.states["auto_continue"] = auto_continue
+
+        self.save()
+
+
 class PomodoroWidget(QFrame):
+
+    # Sent when a full focus session finishes, so the study
+    # tracker can count the time.
+    focus_completed = Signal(int)
+
     def __init__(self):
         super().__init__()
 
+        self.state = PomodoroState()
+
         # Set default timings
-        self.work_minutes = 25
-        self.short_break_minutes = 5
-        self.long_break_minutes = 15
+        self.work_minutes = self.state.get("work_minutes", 25)
+        self.short_break_minutes = self.state.get("short_break_minutes", 5)
+        self.long_break_minutes = self.state.get("long_break_minutes", 15)
 
         self.sessions_before_long_break = 4
 
@@ -25,6 +81,7 @@ class PomodoroWidget(QFrame):
         self.running = False
         self.is_work_session = True
         self.session_number = 1
+        self.completed_sessions = 0
 
         # Timer
         self.timer = QTimer(self)
@@ -34,8 +91,10 @@ class PomodoroWidget(QFrame):
         # Main widget styling
         self.setObjectName("pomodoro")
 
+        self.setFixedWidth(220)
+
         self.setStyleSheet("""
-            QFrame {
+            QFrame#pomodoro {
                 background-color: rgba(82, 96, 68, 210);
                 border-radius: 12px;
             }
@@ -69,6 +128,30 @@ class PomodoroWidget(QFrame):
                 color: rgba(255, 255, 255, 180);
                 font-size: 10px;
                 background: transparent;
+            }
+
+            QLabel#countLabel {
+                color: rgba(232, 213, 177, 220);
+                font-size: 11px;
+                font-weight: bold;
+                background: transparent;
+            }
+
+            QCheckBox {
+                color: rgba(255, 255, 255, 180);
+                font-size: 10px;
+                background: transparent;
+            }
+
+            QCheckBox::indicator {
+                width: 12px;
+                height: 12px;
+                border-radius: 3px;
+                background: rgba(255, 255, 255, 45);
+            }
+
+            QCheckBox::indicator:checked {
+                background: rgba(232, 213, 177, 220);
             }
 
             QComboBox {
@@ -133,6 +216,11 @@ class PomodoroWidget(QFrame):
         self.next_label.setObjectName("nextLabel")
         self.next_label.setAlignment(Qt.AlignCenter)
 
+        # Completed sessions
+        self.count_label = QLabel()
+        self.count_label.setObjectName("countLabel")
+        self.count_label.setAlignment(Qt.AlignCenter)
+
         # Settings
         self.settings_label = QLabel("Focus")
         self.settings_label.setObjectName("settingsLabel")
@@ -163,6 +251,12 @@ class PomodoroWidget(QFrame):
         self.long_selector.currentIndexChanged.connect(
             self.settings_changed
         )
+
+        # Roll straight into the next session
+        self.auto_continue = QCheckBox("Start the next one automatically")
+        self.auto_continue.setChecked(self.state.get("auto_continue", True))
+        self.auto_continue.setCursor(Qt.PointingHandCursor)
+        self.auto_continue.stateChanged.connect(self.save_settings)
 
         # Focus row
         focus_row = QHBoxLayout()
@@ -199,15 +293,23 @@ class PomodoroWidget(QFrame):
 
         # Buttons
         self.start_button = QPushButton("Start")
+        self.start_button.setCursor(Qt.PointingHandCursor)
         self.start_button.clicked.connect(self.toggle_timer)
 
+        self.skip_button = QPushButton("Skip")
+        self.skip_button.setCursor(Qt.PointingHandCursor)
+        self.skip_button.setToolTip("Jump to the next session")
+        self.skip_button.clicked.connect(self.skip_session)
+
         self.reset_button = QPushButton("Reset")
+        self.reset_button.setCursor(Qt.PointingHandCursor)
         self.reset_button.clicked.connect(self.reset_timer)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(6)
 
         button_row.addWidget(self.start_button)
+        button_row.addWidget(self.skip_button)
         button_row.addWidget(self.reset_button)
 
         # Main layout
@@ -219,12 +321,14 @@ class PomodoroWidget(QFrame):
         layout.addWidget(self.session_label)
         layout.addWidget(self.time_label)
         layout.addWidget(self.next_label)
+        layout.addWidget(self.count_label)
 
         layout.addSpacing(4)
 
         layout.addLayout(focus_row)
         layout.addLayout(short_row)
         layout.addLayout(long_row)
+        layout.addWidget(self.auto_continue)
 
         layout.addSpacing(4)
 
@@ -241,12 +345,23 @@ class PomodoroWidget(QFrame):
         for value in values:
             selector.addItem(f"{value} min", value)
 
+        if current not in values:
+            current = values[0]
+
         index = values.index(current)
         selector.setCurrentIndex(index)
 
         return selector
 
     # Settings
+    def save_settings(self):
+        self.state.set_settings(
+            self.work_minutes,
+            self.short_break_minutes,
+            self.long_break_minutes,
+            self.auto_continue.isChecked(),
+        )
+
     def settings_changed(self):
         # Don't change the current timer while it's running.
         if self.running:
@@ -255,6 +370,8 @@ class PomodoroWidget(QFrame):
         self.work_minutes = self.work_selector.currentData()
         self.short_break_minutes = self.short_selector.currentData()
         self.long_break_minutes = self.long_selector.currentData()
+
+        self.save_settings()
 
         self.reset_timer()
 
@@ -298,20 +415,34 @@ class PomodoroWidget(QFrame):
 
         self.update_display()
 
+    def skip_session(self):
+        # Skipping doesn't count as studying.
+        self.switch_session(finished=False)
+
     # Timer
     def tick(self):
         self.remaining -= 1
 
         if self.remaining <= 0:
-            self.switch_session()
+            self.switch_session(finished=True)
             return
 
         self.update_display()
 
-    def switch_session(self):
+    def switch_session(self, finished):
+        keep_going = self.running and self.auto_continue.isChecked()
+
         self.pause_timer()
 
         if self.is_work_session:
+
+            if finished:
+                self.completed_sessions += 1
+
+                # Let the study tracker count this focus time.
+                self.focus_completed.emit(self.work_minutes * 60)
+
+                QApplication.beep()
 
             # Focus -> Break
             if self.session_number >= self.sessions_before_long_break:
@@ -325,6 +456,9 @@ class PomodoroWidget(QFrame):
                 self.remaining = self.short_break_minutes * 60
 
         else:
+
+            if finished:
+                QApplication.beep()
 
             # Break -> Focus
             if self.session_number >= self.sessions_before_long_break:
@@ -340,6 +474,9 @@ class PomodoroWidget(QFrame):
 
         self.update_display()
 
+        if keep_going:
+            self.start_timer()
+
     # Display
     def update_display(self):
         minutes = self.remaining // 60
@@ -348,6 +485,15 @@ class PomodoroWidget(QFrame):
         self.time_label.setText(
             f"{minutes:02d}:{seconds:02d}"
         )
+
+        if self.completed_sessions == 1:
+            self.count_label.setText("✦ 1 session finished")
+        elif self.completed_sessions > 1:
+            self.count_label.setText(
+                f"✦ {self.completed_sessions} sessions finished"
+            )
+        else:
+            self.count_label.setText("")
 
         # Current session
         if self.is_work_session:

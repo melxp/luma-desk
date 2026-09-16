@@ -106,6 +106,19 @@ class StudyTimer(QFrame):
         except OSError as error:
             print("Could not save study data:", error)
 
+    def add_seconds(self, seconds):
+        """Used by the pomodoro timer when a focus session finishes."""
+
+        if seconds <= 0:
+            return
+
+        today = date.today().isoformat()
+        self.data[today] = self.data.get(today, 0) + int(seconds)
+
+        self.save_data()
+        self.update_display()
+        self.study_updated.emit()
+
     # Timer controls
     def toggle_timer(self):
         if self.running:

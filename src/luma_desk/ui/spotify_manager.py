@@ -136,11 +136,15 @@ class SpotifyManager:
     def get_playlist_items(self, playlist_id):
 
         response = requests.get(
-            f"{self.API_BASE}/playlists/{playlist_id}/items",
+            # This used to point at "/items", which isn't a real
+            # Spotify endpoint and returned a 404 every time.
+            f"{self.API_BASE}/playlists/{playlist_id}/tracks",
             headers=self._headers(),
             params={
                 "limit": 50,
-                "market": "from_token",
+                # "market": "from_token" is deprecated. Leaving the
+                # market out lets Spotify use the market tied to
+                # the access token instead.
             },
             timeout=15,
         )
